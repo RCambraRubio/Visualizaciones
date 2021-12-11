@@ -1,0 +1,667 @@
+---
+title: "Panel covid"
+#author: "Raul Cambra Rubio"
+#date: "25/11/2021"
+output: 
+  flexdashboard::flex_dashboard:
+    social: ["menu"]
+    source_code: embed
+    vertical_layout: fill
+    theme: yeti
+---
+
+``` {js}
+// invertir el color de la barra de navegacion.
+$('.navbar-inverse').removeClass('navbar-inverse').addClass('navbar-default');
+```
+
+```{r setup, include=FALSE}
+# Cargar los paquetes necesarios. 
+library(flexdashboard) # Paquete para el Panel
+library(highcharter) # Visualizaciones de datos interactivos
+library(viridis) # Color
+library(tidyverse) # Metapaquete
+library(countrycode) # Convertir nombre de pais/codigos
+library(DT) # Mostrar tablas de datos
+library(crosstalk) # Proporciona interactividad para widgets HTML
+library(plotly) # Visualizaciones de datos interactivos
+library(lubridate) # Paquete de fecha
+```
+
+
+```{r include=FALSE}
+# Leer los datos
+cases <- read.csv('Datos/Data_on_the_daily_number_of_new_reported_COVID_19_cases_and_deaths_by_EUEEA_country.csv') %>%
+  mutate(dateRep=as.Date(dateRep,format="%d/%m/%Y"))
+
+hospital_rates <- read.csv('Datos/Data_on_hospital_and_ICU_admission_rates_and_current_occupancy_for_COVID_19.csv') %>%
+  mutate(date=as.Date(date,format="%Y-%m-%d"))
+
+response <- read.csv('Datos/response_graphs_data_2021_11_24.csv') %>%
+  mutate(
+    date_start=as.Date(date_start,format="%Y-%m-%d"),
+    date_end=as.Date(date_end,format="%Y-%m-%d")
+  )
+
+vaccination <- read.csv('Datos/Data_on_COVID_19_vaccination_in_the_EUEEA.csv') %>%
+  mutate(
+    year = substr(YearWeekISO, 1, 4),
+    week = as.numeric(substr(YearWeekISO, 7, 8)),
+    Date = lubridate::ymd(paste0(year,"01","01")),
+    TargetGroup = fct_recode(TargetGroup, "Edad < 18"="Age<18"),
+    TargetGroup = fct_recode(TargetGroup, "Sanitarios"="HCW"),
+    TargetGroup = fct_recode(TargetGroup, "Residentes en centros"="LTCF"),
+    TargetGroup = fct_recode(TargetGroup, "Edad entre 0 y 4"="Age0_4"),
+    TargetGroup = fct_recode(TargetGroup, "Edad entre 5 y 9"="Age5_9"),
+    TargetGroup = fct_recode(TargetGroup, "Edad entre 10 y 14"="Age10_14"),
+    TargetGroup = fct_recode(TargetGroup, "Edad entre 15 y 17"="Age15_17"),
+    TargetGroup = fct_recode(TargetGroup, "Edad entre 18 y 24"="Age18_24"),
+    TargetGroup = fct_recode(TargetGroup, "Edad entre 25 y 49"="Age25_49"),
+    TargetGroup = fct_recode(TargetGroup, "Edad entre 50 y 59"="Age50_59"),
+    TargetGroup = fct_recode(TargetGroup, "Edad entre 60 y 69"="Age60_69"),
+    TargetGroup = fct_recode(TargetGroup, "Edad entre 70 y 79"="Age70_79"),
+    TargetGroup = fct_recode(TargetGroup, "Edad > 79"="Age80+"),
+    TargetGroup = fct_recode(TargetGroup, "Edad no conocida"="AgeUNK"),
+    TargetGroup = fct_recode(TargetGroup, "Edad < 60"="1_Age<60"),
+    TargetGroup = fct_recode(TargetGroup, "Edad >= 60"="1_Age60+")
+  )
+week(vaccination$Date) <- vaccination$week
+vaccination$country <- countrycode(sourcevar = vaccination$ReportingCountry,
+                                  origin = "iso2c",
+                                  destination = "country.name")
+
+```
+
+```{r include=FALSE}
+# Crear un tema para los graficos. 
+custom_theme <- hc_theme(
+  colors = c('#5CACEE', 'green', 'red'),
+  chart = list(
+         backgroundColor = '#FAFAFA', 
+         plotBorderColor = "black"),
+  xAxis = list(
+         gridLineColor = "C9C9C9", 
+         labels = list(style = list(color = "#333333")), 
+         lineColor = "#C9C9C9", 
+         minorGridLineColor = "#C9C9C9", 
+         tickColor = "#C9C9C9", 
+         title = list(style = list(color = "#333333"))), 
+  yAxis = list(
+         gridLineColor = "#C9C9C9", 
+         labels = list(style = list(color = "#333333")), 
+         lineColor = "#C9C9C9", 
+         minorGridLineColor = "#C9C9C9", 
+         tickColor = "#C9C9C9", 
+         tickWidth = 1, 
+         title = list(style = list(color = "#333333"))),   
+  title = list(style = list(color = '#333333', fontFamily = "Lato")),
+  subtitle = list(style = list(color = '#666666', fontFamily = "Lato")),
+  legend = list(
+         itemStyle = list(color = "#333333"), 
+         itemHoverStyle = list(color = "#FFF"), 
+         itemHiddenStyle = list(color = "#606063")), 
+  credits = list(style = list(color = "#666")),
+  itemHoverStyle = list(color = 'gray'))
+```
+
+<style>
+.colored {
+  background-color: #FAFAFA;
+}
+</style>
+
+
+General
+=======================================================================
+
+Column {.tabset .tabset-fade data-width=700 .colored }
+-----------------------------------------------------------------------
+
+### Evolución de casos {.no-padding}
+
+```{r}
+# Crear tabla que vamos a graficar  
+cases_per_day <- cases %>%
+  select(dateRep, cases, popData2020) %>%
+  group_by(dateRep) %>%
+  summarise(total_cases_per_100mil = round(100000*sum(cases)/sum(popData2020),2)) 
+
+# Crear la grafica
+highchart(type = "stock") %>% 
+  hc_add_series(cases_per_day, hcaes(x = dateRep, y = total_cases_per_100mil, color = total_cases_per_100mil), type = "line") %>%
+  hc_tooltip(crosshairs = TRUE, borderWidth = 1.5, headerFormat = "", pointFormat = paste("Día: <b>{point.x: %d-%m-%Y}</b> <br> Casos por 100 mil: <b>{point.y}</b>")) %>%
+  hc_rangeSelector(selected = 0) %>%
+  hc_title(text = "Casos por día") %>% 
+  hc_xAxis(type = "date", title = list(text = "Día")) %>%
+  hc_yAxis(title = list(text = "Casos")) %>%
+  hc_legend(enabled = FALSE) %>% 
+  hc_add_theme(custom_theme)
+```
+
+
+### Evolución de muertes {.no-padding}
+
+```{r}
+# Crear tabla que vamos a graficar  
+deaths_per_day <- cases %>%
+  select(dateRep, deaths, popData2020) %>%
+  group_by(dateRep) %>%
+  summarise(total_deaths_per_100mil = round(100000*sum(deaths)/sum(popData2020),2)) 
+
+# Crear la grafica
+highchart(type = "stock") %>% 
+  hc_add_series(deaths_per_day, hcaes(x = dateRep, y = total_deaths_per_100mil, color = total_deaths_per_100mil), type = "line") %>%
+  hc_tooltip(crosshairs = TRUE, borderWidth = 1.5, headerFormat = "", pointFormat = paste("Día: <b>{point.x: %d-%m-%Y}</b> <br> Muertes por 100 mil: <b>{point.y}</b>")) %>%
+  hc_rangeSelector(selected = 0) %>%
+  hc_title(text = "Muertes por día") %>% 
+  hc_xAxis(type = "date", title = list(text = "Día")) %>%
+  hc_yAxis(title = list(text = "Muertes")) %>%
+  hc_legend(enabled = FALSE) %>% 
+  hc_add_theme(custom_theme)
+```
+
+
+
+### Evolución hospitalizaciones {.no-padding} 
+```{r}
+# Crear la tabla de hospitalizaciones segun tipo y quitando los resultados semanales  
+hospital_rates_per_day_and_indicator <- hospital_rates %>%
+  filter(!str_detect(indicator,"Weekly")) %>%
+  select(date, indicator, value) %>%
+  group_by(date, indicator) %>%
+  summarise(total_value = sum(value))
+
+# Escoger colores para el grupo
+indicator_color_hospital <- c("#87CEEB", "#EE6AA7") # rosa y azul
+
+# Crear grafica
+highchart(type = "stock") %>% 
+  hc_add_series(hospital_rates_per_day_and_indicator, hcaes(x = date, y = total_value, group = indicator), type = "line", color = indicator_color_hospital) %>%
+  hc_tooltip(crosshairs = TRUE, borderWidth = 1.5, headerFormat = "", pointFormat = paste("Día: <b>{point.x: %d-%m-%Y}</b> <br>","Tipo: <b>{point.indicator}</b><br>", "Hospitalizaciones: <b>{point.y}</b>")) %>%
+  hc_rangeSelector(selected = 0) %>%
+  hc_title(text = "hospitalizaciones segun tipo") %>% 
+  hc_xAxis(type = "date", title = list(text = "Día")) %>%
+  hc_yAxis(title = list(text = "Hospitalizaciones")) %>% 
+  hc_add_theme(custom_theme)
+```
+
+
+### Evolución vacunaciones {.no-padding} 
+```{r}
+# Crear la tabla de vacunaciones  
+vaccination_per_week <- vaccination %>%
+  filter(
+    TargetGroup == "ALL" | TargetGroup == "Edad < 18",
+    nchar(Region) <3
+  ) %>%
+  select(Date, FirstDose, SecondDose, UnknownDose) %>%
+  group_by(Date) %>%
+  summarise(
+    total_FirstDose = sum(FirstDose), 
+    total_SecondDose = sum(SecondDose),
+    total_UnknownDose = sum(UnknownDose)
+  )
+
+# Crear grafica
+highchart(type = "stock") %>%
+  hc_add_series(vaccination_per_week, hcaes(x = Date, y = total_FirstDose), type = "line", name = "Primera dosis") %>%
+  hc_add_series(vaccination_per_week, hcaes(x = Date, y = total_SecondDose), type = "line", name = "Segunda dosis") %>%
+  hc_add_series(vaccination_per_week, hcaes(x = Date, y = total_UnknownDose), type = "line", name = "Dosis No conocida") %>%
+  hc_tooltip(crosshairs = TRUE, borderWidth = 1.5, headerFormat = "", pointFormat = paste("Tipo de dosis: <b>{series.name}</b> <br>", "Semana: <b>{point.x: %d-%m-%Y}</b> <br>", "Cantidad: <b>{point.y}</b>")) %>%
+  hc_rangeSelector(selected = 0) %>%
+  hc_title(text = "Vacunaciones segun tipo") %>% 
+  hc_xAxis(type = "date", title = list(text = "Semana")) %>%
+  hc_yAxis(title = list(text = "Cantidad de dosis")) %>% 
+  hc_add_theme(custom_theme)
+```
+
+
+
+Column {data-width=300}
+-----------------------------------------------------------------------
+### Casos diarios recientes <font size='1'> (por 100 mil habitantes) </font>
+```{r}
+# Promedio de casos de los ultimos 30 dias 
+avg_cases_per_day_last_30_days <- 
+  round(
+    mean(
+      filter(cases_per_day,dateRep>=max(dateRep)-30)$total_cases_per_100mil
+    ), 
+  2)
+
+# crear caja
+valueBox(avg_cases_per_day_last_30_days, icon = "fas fa-heart", color = '#B7950B')
+```
+
+
+### Hospitalizaciones recientes {.no-title .no-padding .colored }
+```{r}
+# Calcular el hospitalizaciones de los ultimos 30 dias
+avg_hospital_last_30_days <- hospital_rates_per_day_and_indicator %>%
+  filter(date>=max(date)-30) %>%
+  select(indicator, total_value) %>%
+  group_by(indicator) %>%
+  summarise(avg_total_value = round(mean(total_value),0))
+
+# Crear grafico
+highchart() %>% 
+  hc_add_series(avg_hospital_last_30_days, hcaes(x = indicator, y = avg_total_value, 
+                               color = indicator_color_hospital), type = "pie") %>%
+  hc_tooltip(borderWidth = 1.5, headerFormat = "", pointFormat = paste("Tipo: <b>{point.indicator} ({point.percentage:.2f}%)</b> <br> hospitalizaciones: <b>{point.y}</b>")) %>%
+  hc_title(text = "<b>Hospitalizaciones</b> recientes") %>%
+  hc_add_theme(custom_theme)
+```
+
+
+### Total vacunados {.no-title .no-padding .colored }
+```{r}
+# Calcular el procentaje de vacunados
+vaccination_per_country <- vaccination %>%
+  filter(
+    TargetGroup == "ALL" | TargetGroup == "Edad < 18",
+    nchar(Region) <3
+  ) %>%
+  select(FirstDose, Population, country) %>%
+  group_by(country) %>%
+  summarise(total_vaccionation = sum(FirstDose), total_population = max(Population))
+
+vaccination_total <- vaccination_per_country %>%
+  summarise(
+    label = "vacunados",
+    number = sum(total_vaccionation),
+    total_population = sum(total_population)
+  )
+
+no_vaccination <- data.frame(
+    label = "no vacunados", 
+    number = vaccination_total$total_population-vaccination_total$number, 
+    total_population = vaccination_total$total_population
+  )
+
+vaccination_total <- rbind(vaccination_total, no_vaccination)
+
+indicator_color_vaccination <- c("#229954", "#CD5C5C") # verde y rojo
+
+# Crear grafico
+highchart() %>% 
+  hc_add_series(vaccination_total, hcaes(x = label, y = number, 
+                               color = indicator_color_vaccination), type = "pie") %>%
+  hc_tooltip(borderWidth = 1.5, headerFormat = "", pointFormat = paste("Tipo: <b>{point.label} ({point.percentage:.2f}%)</b> <br> numero: <b>{point.y}</b>")) %>%
+  hc_title(text = "Total <b>vacunados</b>") %>%
+  hc_add_theme(custom_theme)
+
+# Crear grafico
+# grafico alternativo: gauge(round(100*vaccination_total$number/vaccination_total$total_population,2), min=0, max=100, symbol = '%')
+```
+
+
+Column {data-width=300}
+-----------------------------------------------------------------------
+
+### Muertes diarias recientes <font size='1'> (por 100 mil habitantes) </font>
+```{r}
+# Promedio de muertes de los ultimos 30 dias 
+avg_deaths_per_day_last_30_days <- 
+  round(
+    mean(
+      filter(deaths_per_day,dateRep>=max(dateRep)-30)$total_deaths_per_100mil
+    ), 
+  2)
+
+# crear caja
+valueBox(avg_deaths_per_day_last_30_days, icon = "fa-plus", color = 'firebrick')
+```
+
+
+### Vacunados por grupo {.no-title .no-padding .colored }
+```{r}
+# Calcular el procentaje de vacunados
+vaccination_per_group_and_region <- vaccination %>%
+  filter(
+    TargetGroup != "ALL",
+    TargetGroup != "Edad no conocida",
+    nchar(Region) <3
+  ) %>%
+  select(TargetGroup, Region, FirstDose, Denominator) %>%
+  group_by(Region, TargetGroup) %>%
+  summarise(FDosis=sum(FirstDose), Den=max(Denominator))
+
+vaccination_per_group <- vaccination_per_group_and_region %>%
+  group_by(TargetGroup) %>%
+  summarise(FDosis=sum(FDosis), Den=sum(Den, na.rm=TRUE))
+
+vaccination_per_group$percentage = round(100*vaccination_per_group$FDosis/vaccination_per_group$Den,2)
+
+vaccination_per_group <- arrange(vaccination_per_group, percentage)
+
+
+# Crear grafico
+highchart() %>% 
+  hc_add_series(vaccination_per_group, hcaes(x = TargetGroup, y = percentage, 
+                               color = percentage), type = "bar") %>%
+  hc_tooltip(borderWidth = 1.5, headerFormat = "", pointFormat = paste("Tipo: <b>{point.TargetGroup}</b> <br>", "Cantidad: <b>{point.FDosis}</b> <br>", "Porcentaje sobre Población: <b>{point.y}%</b>")) %>%
+  hc_legend(enabled = FALSE) %>%
+  hc_title(text = "Edades de los <b>vacunados</b>") %>%
+  hc_xAxis(categories = vaccination_per_group$TargetGroup, 
+           title = list(text = "grupo"),
+           labels = list(step = 1),
+           min = 0, max = 10,
+           scrollbar = list(enabled = TRUE)) %>%
+  hc_yAxis(title = list(text = "Porcentaje de vacunados")) %>% 
+  hc_plotOptions(bar = list(stacking = "normal", 
+                              pointPadding = 0, groupPadding = 0, borderWidth = 0.5)) %>% 
+  hc_add_theme(custom_theme)
+```
+
+
+Por País
+=======================================================================
+
+Column {.tabset .tabset-fade data-width=500 .colored }
+-----------------------------------------------------------------------
+
+### Casos recientes {.no-padding}
+```{r}
+# Crear tabla que vamos a graficar  
+cases_per_country_recently <- cases %>%
+  filter(dateRep>=max(dateRep)-30) %>%
+  select(cases, popData2020, countriesAndTerritories) %>%
+  group_by(countriesAndTerritories) %>%
+  summarise(cases_per_100mil = round(100000*mean(cases/popData2020),2))%>%
+  arrange(desc(cases_per_100mil))
+
+# Crear la grafica
+highchart() %>%
+  hc_add_series(cases_per_country_recently, hcaes(x = countriesAndTerritories, y = cases_per_100mil, color = cases_per_100mil), type = "bar")  %>% 
+  hc_tooltip(borderWidth = 1.5, headerFormat = "",
+             pointFormat = paste("País: <b>{point.countriesAndTerritories} </b> <br>",
+                                  "Casos: <b>{point.y}</b>")) %>%
+  hc_legend(enabled = FALSE) %>%
+  hc_title(text = "Casos por país") %>% 
+  hc_xAxis(categories = cases_per_country_recently$countriesAndTerritories, 
+           labels = list(step = 1),
+           min = 0, max = 20,
+           scrollbar = list(enabled = TRUE)) %>%
+  hc_yAxis(title = list(text = "País")) %>%
+  hc_plotOptions(bar = list(stacking = "normal", 
+                            pointPadding = 0, groupPadding = 0, borderWidth = 0.5)) %>% 
+  hc_add_theme(custom_theme)
+```
+
+
+### Muertes recientes {.no-padding}
+```{r}
+# Crear tabla que vamos a graficar  
+deaths_per_country_recently <- cases %>%
+  filter(dateRep>=max(dateRep)-30) %>%
+  select(deaths, popData2020, countriesAndTerritories) %>%
+  group_by(countriesAndTerritories) %>%
+  summarise(deaths_per_100mil = round(100000*mean(deaths/popData2020),2))%>%
+  arrange(desc(deaths_per_100mil))
+
+# Crear la grafica
+highchart() %>%
+  hc_add_series(deaths_per_country_recently, hcaes(x = countriesAndTerritories, y = deaths_per_100mil, color = deaths_per_100mil), type = "bar")  %>% 
+  hc_tooltip(borderWidth = 1.5, headerFormat = "",
+             pointFormat = paste("País: <b>{point.countriesAndTerritories} </b> <br>",
+                                "Muertes: <b>{point.y}</b>")) %>%
+  hc_legend(enabled = FALSE) %>%
+  hc_title(text = "Muertes por país") %>% 
+  hc_xAxis(categories = deaths_per_country_recently$countriesAndTerritories, 
+           labels = list(step = 1),
+           min = 0, max = 20,
+           scrollbar = list(enabled = TRUE)) %>%
+  hc_yAxis(title = list(text = "País")) %>%
+  hc_plotOptions(bar = list(stacking = "normal", 
+                            pointPadding = 0, groupPadding = 0, borderWidth = 0.5)) %>% 
+  hc_add_theme(custom_theme)
+```
+
+
+### Hospitalizaciones recientes {.no-padding} 
+```{r}
+# Crear la tabla de hospitalizaciones segun tipo y quitando los resultados semanales  
+hospital_rates_per_indicator_recently <- hospital_rates %>%
+  filter(!str_detect(indicator,"Weekly") & date>=max(date)-30) %>%
+  select(indicator, Country, value) %>%
+  group_by(indicator, Country) %>%
+  summarise(total_value = sum(value)) %>%
+  arrange(desc(total_value))
+
+# Crear grafica
+highchart() %>%
+  hc_add_series(hospital_rates_per_indicator_recently, hcaes(x = Country, y = total_value, group = indicator), type = "bar", color = indicator_color_hospital) %>%
+  hc_tooltip(borderWidth = 1.5, pointFormat = paste("Tipo: <b>{point.indicator} ({point.percentage:.1f}%)</b> <br> Hospitalizaciones: <b>{point.y}</b>")) %>%
+  hc_legend(enabled = TRUE, colorByPoint = TRUE) %>%
+  hc_title(text = "Hospitalizaciones por país") %>%
+  hc_xAxis(categories = hospital_rates_per_indicator_recently$Country,
+           labels = list(step = 1),
+           min = 0, max = 20,
+           scrollbar = list(enabled = TRUE)) %>%
+  hc_yAxis(title = list(text = "Porcentaje")) %>%
+  hc_plotOptions(bar = list(stacking = "percent", 
+                            pointPadding = 0, groupPadding = 0, borderWidth = 0.4)) %>% 
+  hc_add_theme(custom_theme)
+
+```
+
+
+### Vacunaciones por país {.no-padding}
+```{r}
+# Crear tabla que vamos a graficar  
+vaccination_per_country$percentage <- round(100*vaccination_per_country$total_vaccionation/vaccination_per_country$total_population, 2)
+vaccination_per_country <- arrange(vaccination_per_country, desc(percentage))
+
+# Crear la grafica
+highchart() %>%
+  hc_add_series(vaccination_per_country, hcaes(x = country, y = percentage, color = percentage), type = "bar")  %>% 
+  hc_tooltip(borderWidth = 1.5, headerFormat = "",
+             pointFormat = paste("País: <b>{point.country} </b> <br>",
+                                "Porcentaje de vacunados: <b>{point.y}</b> %")) %>%
+  hc_legend(enabled = FALSE) %>%
+  hc_title(text = "Vacunados por país") %>% 
+  hc_xAxis(categories = vaccination_per_country$country, 
+           labels = list(step = 1),
+           min = 0, max = 20,
+           scrollbar = list(enabled = TRUE)) %>%
+  hc_yAxis(title = list(text = "País")) %>%
+  hc_plotOptions(bar = list(stacking = "normal", 
+                            pointPadding = 0, groupPadding = 0, borderWidth = 0.5)) %>% 
+  hc_add_theme(custom_theme)
+```
+
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Casos recientes por país {.no-padding}
+```{r}
+# Crear un mapa
+cases_per_country_recently$code <- countrycode(sourcevar = cases_per_country_recently$countriesAndTerritories,
+                                   origin = "country.name",
+                                   destination = "iso3c")
+
+
+plot_ly(
+    cases_per_country_recently, 
+    type='choropleth', 
+    locations=cases_per_country_recently$code, 
+    z=cases_per_country_recently$cases_per_100mil, 
+    text=paste("Casos por 100 mil<br>", cases_per_country_recently$countriesAndTerritories), 
+    colorscale=color_stops()
+  ) %>% 
+  layout(
+    geo = list(
+    scope = 'europe',
+    showlakes = TRUE,
+    lakecolor = toRGB('white')
+  )
+)
+
+```
+
+
+
+Buscador {data-icon="fa-search"}
+=======================================================================
+
+Column
+-----------------------------------------------------------------------
+
+### Filtros {.no-title .colored }
+
+**Escoger filtro:**
+```{r}
+# Crear la tabla sobre la que se efectuarán los filtros  
+cases_per_country_and_day <- cases %>%
+  filter(dateRep>='2021-03-15') %>%
+  select(dateRep, countriesAndTerritories, cases, deaths, popData2020) %>%
+  group_by(dateRep, countriesAndTerritories) %>%
+  summarise(total_cases_per_100mil = round(100000*sum(cases)/sum(popData2020),2),
+            total_deaths_per_100mil = round(100000*sum(deaths)/sum(popData2020),2))
+
+response_start_summary <- response %>%
+  select(Country, Response_measure, date_start) %>%
+  group_by(Country, date_start) %>%
+  summarise(
+    Response_measure = paste(Response_measure, collapse=", ")
+  )
+
+response_end_summary <- response %>%
+  select(Country, Response_measure, date_end) %>%
+  group_by(Country, date_end) %>%
+  summarise(
+    Response_measure = paste(Response_measure, collapse=", ")
+  )
+
+cases_per_country_and_day <- merge(x = cases_per_country_and_day, y = response_start_summary, by.x = c("countriesAndTerritories", "dateRep"), by.y=c("Country","date_start"), all.x = TRUE) %>%
+  rename_at("Response_measure", ~"Response_measure_start")
+cases_per_country_and_day$is_start_measure <- !is.na(cases_per_country_and_day$Response_measure_start)
+
+cases_per_country_and_day <- merge(x = cases_per_country_and_day, y = response_end_summary, by.x = c("countriesAndTerritories", "dateRep"), by.y=c("Country","date_end"), all.x = TRUE) %>%
+  rename_at("Response_measure", ~"Response_measure_end")
+cases_per_country_and_day$is_end_measure <- !is.na(cases_per_country_and_day$Response_measure_end)
+
+# Crear la variable de datos compartidos. Necesaria para aplicar los filtros. 
+shared_data <- SharedData$new(cases_per_country_and_day, group = 'hello')
+
+# Crear un filtro por fecha y otro por país.
+# filter_slider("dateRep", "Día", shared_data, ~dateRep)
+filter_select("countriesAndTerritories", "País", shared_data, ~countriesAndTerritories, allLevels = TRUE, multiple = TRUE)
+```
+
+
+***
+```{r}
+# Crear tabla 
+datatable(shared_data,
+          rownames = FALSE,
+          colnames = c('País', 'Día', 'casos por 100 mil', 'muertes por mil', 'medida empezada', 'ha empezado una medida', 'medida terminada', 'ha terminado una medida'),
+          class = 'cell-border stripe',
+          width = '100%',
+          extensions = "Scroller",
+          options=list(deferRender = FALSE, 
+                       scrollY = 280, 
+                       scrollCollapse = TRUE,
+                       scroller = TRUE,
+                       dom = 't'))
+```
+
+### Casos por país {.no-title .colored }
+```{r}
+# Escoger una semilla
+set.seed(80085)
+
+# Crear la grafica compatible con los filtros
+fig <- shared_data %>% plot_ly()
+      
+fig <- fig %>% add_trace(x = ~dateRep, y = ~total_cases_per_100mil, 
+       color = ~countriesAndTerritories, 
+       colors = sample(colours(), 120),
+       type = 'scatter', mode = 'lines',
+       hoverinfo = 'text', 
+       text = ~paste(
+         "País: ", countriesAndTerritories, 
+         "<br>Día: ", dateRep, 
+         "<br>Casos por 100 mil: ", total_cases_per_100mil,
+         "<br>Muertes por 100 mil: ", total_deaths_per_100mil
+         )
+       )
+
+fig <- fig %>% add_trace(x = ~dateRep, y = ~is_start_measure*(-5), group = ~countriesAndTerritories,
+      color = I('gold2'),
+      type = 'bar',
+      hoverinfo = 'text', 
+       text = ~paste(
+         "País: ", countriesAndTerritories,
+         "<br>Medida empezada: ", Response_measure_start 
+         )
+      )
+
+fig <- fig %>% add_trace(x = ~dateRep, y = ~is_end_measure*(-5), group = ~countriesAndTerritories,
+      color = I('tomato3'), 
+      type = 'bar',
+      hoverinfo = 'text', 
+       text = ~paste(
+         "País: ", countriesAndTerritories,
+         "<br>Medida finalizada: ", Response_measure_end
+         )
+      )
+
+fig <- fig %>% layout(showlegend = FALSE,
+              title = "Casos por país",
+              xaxis = list(title = "Día", 
+                           range = c(max(cases_per_country_and_day$dateRep)-60, max(cases_per_country_and_day$dateRep)),
+                           rangeselector = list(
+                              buttons = list(
+                                list(
+                                  count = 3,
+                                  label = "3 mo",
+                                  step = "month",
+                                  stepmode = "backward"),
+                                list(
+                                  count = 6,
+                                  label = "6 mo",
+                                  step = "month",
+                                  stepmode = "backward"),
+                                list(
+                                  count = 1,
+                                  label = "1 yr",
+                                  step = "year",
+                                  stepmode = "backward"),
+                                list(
+                                  count = 1,
+                                  label = "YTD",
+                                  step = "year",
+                                  stepmode = "todate"),
+                                list(step = "all"))),
+                           rangeslider = list(type = "date")),
+              yaxis = list(title = "Casos por 100 mil")
+              )
+fig
+       
+```
+
+
+Información {data-icon="fa-info-circle"}
+=======================================================================
+
+Column {data-width=1000}
+-----------------------------------------------------------------------
+
+### { .colored }
+
+**Referencias:**  
+
+El conjunto de datos usado para crear este panel ha sido obtenido de la siguiente fuente:  
+
+* https://www.ecdc.europa.eu/en/publications-data/data-covid-19-vaccination-eu-eea
+
+En concreto los 4 documentos utilizados provienen de la siguiente fuente:
+
+* https://www.ecdc.europa.eu/en/publications-data/data-daily-new-cases-covid-19-eueea-country
+* https://www.ecdc.europa.eu/en/publications-data/download-data-hospital-and-icu-admission-rates-and-current-occupancy-covid-19
+* https://www.ecdc.europa.eu/en/publications-data/download-data-response-measures-covid-19
+* https://www.ecdc.europa.eu/en/publications-data/data-covid-19-vaccination-eu-eea
+
+En estas fuentes se puede encontrar más información.
